@@ -1,17 +1,30 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/context/AuthContext";
 
-
-
+// 웹사이트 메타데이터 설정 (SEO 및 브라우저 탭 타이틀)
 export const metadata: Metadata = {
-  title: "모자이크",
-  description: "모자이크 짤 생성 앱",
+  title: "Mosaic AI - 원클릭 바이럴 숏폼 영상 제작 AI",
+  description: "아이디어 한 줄로 60초 만에 완성하는 틱톡, 릴스, 유튜브 쇼츠 바이럴 영상 제작 서비스",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+/**
+ * Next.js 루트 레이아웃 (RootLayout)
+ * 
+ * ⚠️ Next.js App Router 규칙:
+ * app/layout.tsx는 모든 페이지의 최상위 껍질이므로 반드시 <html>과 <body> 태그를 포함해야 합니다.
+ * 전역 AuthProvider를 감싸서 모든 하위 컴포넌트에서 Firebase 로그인/로그아웃 기능을 공유합니다.
+ */
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
-
-    <body className="min-h-full flex flex-col">{children}</body>
-
+    <html lang="ko" className="dark">
+      <body className="min-h-screen flex flex-col bg-[#09090b] text-[#f4f4f5] antialiased">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
+    </html>
   );
 }
