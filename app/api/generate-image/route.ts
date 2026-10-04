@@ -4,9 +4,16 @@ import Replicate from "replicate";
 export const maxDuration = 60; // AI 이미지 생성을 위한 타임아웃 확장 (초)
 
 export async function POST(request: Request) {
+  // catch 블록에서도 안전하게 참조할 수 있도록 상위 스코프에 변수 선언
+  let imageBase64 = "";
+  let promptText = "";
+
   try {
-    const { imageBase64, category, customPrompt, useDemoFallback } =
-      await request.json();
+    const body = await request.json();
+    imageBase64 = body.imageBase64 || "";
+    const category = body.category;
+    const customPrompt = body.customPrompt;
+    const useDemoFallback = body.useDemoFallback;
 
     if (!imageBase64) {
       return NextResponse.json(
@@ -24,7 +31,7 @@ export async function POST(request: Request) {
     }
 
     // 카테고리별 바이럴 특화 프롬프트 설계
-    let promptText = customPrompt || "";
+    promptText = customPrompt || "";
     if (!promptText) {
       switch (category) {
         case "야구 중계샷":

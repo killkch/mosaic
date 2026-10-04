@@ -58,7 +58,8 @@ export const FlowArt: React.FC<FlowArtProps> = ({
   className,
   'aria-label': ariaLabel = 'Story scroll',
 }) => {
-  const containerRef = useRef<HTMLElement>(null);
+  // HTMLDivElement 타입으로 정확히 지정하여 div ref 타입 호환성 확보
+  const containerRef = useRef<HTMLDivElement>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
