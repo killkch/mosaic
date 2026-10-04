@@ -4,6 +4,7 @@ import React, { useState, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { GenerationPipeline } from "@/components/GenerationPipeline";
+import CreditPurchaseModal from "@/components/CreditPurchaseModal";
 import { storage, db } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
@@ -77,7 +78,7 @@ function getStorageTimestamp(): number {
 }
 
 export default function GeneratePage() {
-  const { user, userData, logout } = useAuth();
+  const { user, userData, logout, deductCredit } = useAuth();
 
   // 각 슬롯별로 사용자가 첨부한 이미지 URL 상태
   const [attachedImages, setAttachedImages] = useState<Record<string, string>>({});
@@ -85,6 +86,10 @@ export default function GeneratePage() {
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
   // 우측 상단 유저 메뉴 토글
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  // 💳 토스페이먼츠 크레딧 충전 모달 상태
+  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
+  const [isRequiredNotice, setIsRequiredNotice] = useState(false);
 
   // 🌟 파이프라인 및 Replicate 생성 관련 상태
   const [isPipelineActive, setIsPipelineActive] = useState(false);
@@ -123,6 +128,16 @@ export default function GeneratePage() {
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // 🪙 [크레딧 잔액 검사] 영상 생성 시 1 크레딧 소모
+    const currentCredits = userData?.credits ?? 0;
+    if (currentCredits < 1) {
+      setIsRequiredNotice(true);
+      setIsPurchaseModalOpen(true);
+      // 파일 입력값 리셋
+      e.target.value = "";
+      return;
+    }
 
     const previewUrl = URL.createObjectURL(file);
     setAttachedImages((prev) => ({
@@ -247,6 +262,9 @@ export default function GeneratePage() {
       });
 
       setGenerationId(docRef.id);
+
+      // 4. 🪙 영상 제작 성공 시 1 크레딧 원자적 차감
+      await deductCredit(1);
     } catch (err: unknown) {
       const error = err as Error;
       console.warn("AI 생성 파이프라인 알림:", error);
@@ -292,59 +310,92 @@ export default function GeneratePage() {
           </span>
         </Link>
 
-        {/* 우측 상단: 유저 아이콘 및 프로필 메뉴 */}
-        <div className="relative">
+        {/* 우측 상단: 크레딧 충전 버튼 및 유저 프로필 메뉴 */}
+        <div className="flex items-center gap-3">
+          {/* 🪙 크레딧 충전 뱃지 버튼 (클릭 시 토스페이먼츠 모달 오픈) */}
           <button
-            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            className="flex items-center gap-2 p-1.5 rounded-full bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] transition-all cursor-pointer active:scale-95"
-            aria-label="사용자 프로필"
+            onClick={() => {
+              setIsRequiredNotice(false);
+              setIsPurchaseModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.12)]"
+            title="토스페이먼츠 크레딧 충전"
           >
-            {user?.photoURL ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={user.photoURL}
-                alt="Profile"
-                className="w-8 h-8 rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center font-bold text-xs">
-                {user?.email ? user.email.slice(0, 2).toUpperCase() : "👤"}
-              </div>
-            )}
+            <span>🪙</span>
+            <span>{userData?.credits ?? 0} 크레딧</span>
+            <span className="text-[10px] bg-emerald-500 text-black px-1.5 py-0.5 rounded-full font-black">
+              충전
+            </span>
           </button>
 
-          {/* 유저 드롭다운 메뉴 */}
-          {isUserMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#141416] border border-[#27272a] p-3 shadow-2xl z-50 animate-fade-in text-left">
-              <div className="px-3 py-2 border-b border-[#27272a]">
-                <div className="text-xs font-mono text-[#71717a]">Signed in as</div>
-                <div className="text-sm font-medium text-white truncate mt-0.5">
-                  {user?.email || "게스트 사용자"}
+          {/* 유저 프로필 아이콘 및 메뉴 */}
+          <div className="relative">
+            <button
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              className="flex items-center gap-2 p-1.5 rounded-full bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] transition-all cursor-pointer active:scale-95"
+              aria-label="사용자 프로필"
+            >
+              {user?.photoURL ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.photoURL}
+                  alt="Profile"
+                  className="w-8 h-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center font-bold text-xs">
+                  {user?.email ? user.email.slice(0, 2).toUpperCase() : "👤"}
                 </div>
-                {userData && (
-                  <div className="text-xs text-emerald-400 font-mono mt-1">
-                    ✨ 보유 크레딧: {userData.credits}개
+              )}
+            </button>
+
+            {/* 유저 드롭다운 메뉴 */}
+            {isUserMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#141416] border border-[#27272a] p-3 shadow-2xl z-50 animate-fade-in text-left">
+                <div className="px-3 py-2 border-b border-[#27272a]">
+                  <div className="text-xs font-mono text-[#71717a]">Signed in as</div>
+                  <div className="text-sm font-medium text-white truncate mt-0.5">
+                    {user?.email || "게스트 사용자"}
                   </div>
-                )}
-              </div>
-              <div className="pt-2">
-                <Link
-                  href="/"
-                  className="block px-3 py-1.5 text-xs text-[#a1a1aa] hover:text-white hover:bg-[#18181b] rounded-lg transition-colors"
-                >
-                  홈으로 이동
-                </Link>
-                {user && (
+                  {userData && (
+                    <div className="text-xs text-emerald-400 font-mono mt-1 flex items-center justify-between">
+                      <span>✨ 보유 크레딧:</span>
+                      <span className="font-bold">{userData.credits}개</span>
+                    </div>
+                  )}
+                </div>
+                <div className="pt-2 space-y-1">
                   <button
-                    onClick={() => logout()}
-                    className="w-full text-left px-3 py-1.5 text-xs text-[#ff5a5a] hover:bg-[#ff5a5a]/10 rounded-lg transition-colors mt-1 cursor-pointer"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      setIsRequiredNotice(false);
+                      setIsPurchaseModalOpen(true);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors font-semibold flex items-center justify-between cursor-pointer"
                   >
-                    로그아웃
+                    <span>🪙 크레딧 충전하기</span>
+                    <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-300">
+                      토스결제
+                    </span>
                   </button>
-                )}
+                  <Link
+                    href="/"
+                    className="block px-3 py-1.5 text-xs text-[#a1a1aa] hover:text-white hover:bg-[#18181b] rounded-lg transition-colors"
+                  >
+                    홈으로 이동
+                  </Link>
+                  {user && (
+                    <button
+                      onClick={() => logout()}
+                      className="w-full text-left px-3 py-1.5 text-xs text-[#ff5a5a] hover:bg-[#ff5a5a]/10 rounded-lg transition-colors cursor-pointer"
+                    >
+                      로그아웃
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </header>
 
@@ -563,6 +614,15 @@ export default function GeneratePage() {
             : "각 영상 카드를 마우스로 가리키고 클릭하여 사진을 첨부하세요"}
         </span>
       </footer>
+
+      {/* =================================================================
+          4. 💳 토스페이먼츠 크레딧 결제 모달 (주문서형 결제 UI)
+          ================================================================= */}
+      <CreditPurchaseModal
+        isOpen={isPurchaseModalOpen}
+        onClose={() => setIsPurchaseModalOpen(false)}
+        requiredCreditsNotice={isRequiredNotice}
+      />
     </div>
   );
 }

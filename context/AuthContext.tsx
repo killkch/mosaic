@@ -15,6 +15,8 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  increment,
+  onSnapshot,
   serverTimestamp,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -31,6 +33,7 @@ export interface UserProfile {
   provider?: string;         // 가입 제공업체 (password 또는 google.com)
   createdAt?: unknown;
   lastLoginAt?: unknown;
+  lastPaymentAt?: unknown;
 }
 
 // =================================================================
@@ -44,6 +47,7 @@ interface AuthContextType {
   signup: (email: string, pass: string) => Promise<void>;   // 신규 회원가입
   loginWithGoogle: () => Promise<void>;      // 구글 소셜 로그인
   logout: () => Promise<void>;               // 로그아웃
+  deductCredit: (amount?: number) => Promise<boolean>;      // 영상 생성 시 크레딧 차감
 }
 
 // React Context 생성
@@ -59,10 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   /**
-   * 💾 Firestore users 컬렉션 사용자 정보 동기화 함수
-   * 사용자가 로그인했을 때 Firestore를 확인하여:
-   * 1) 처음 방문한 사용자라면 -> users 컬렉션에 새 문서를 만들고 3회 무료 크레딧 지급
-   * 2) 이미 존재하는 사용자라면 -> lastLoginAt 시간을 최신화하고 정보 로드
+   * 💾 Firestore users 컬렉션 초기 사용자 등록/로그인 시간 최신화
    */
   const syncUserToFirestore = async (firebaseUser: User) => {
     try {
@@ -70,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userSnap = await getDoc(userDocRef);
 
       if (!userSnap.exists()) {
-        // ✨ [처음 방문한 사용자] 신규 등록
+        // ✨ [처음 방문한 사용자] 신규 등록 (기본 무료 크레딧 3개 지급)
         const newProfileData: UserProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
@@ -82,28 +83,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           provider: firebaseUser.providerData[0]?.providerId || "password",
         };
 
-        // Firestore에 타임스탬프와 함께 저장
         await setDoc(userDocRef, {
           ...newProfileData,
           createdAt: serverTimestamp(),
           lastLoginAt: serverTimestamp(),
         });
-
-        setUserData(newProfileData);
       } else {
-        // 🔄 [기존 사용자] 로그인 시간 최신화 및 기존 정보 불러오기
+        // 🔄 [기존 사용자] 로그인 시간 최신화
         await updateDoc(userDocRef, {
           lastLoginAt: serverTimestamp(),
-        });
-
-        const existingData = userSnap.data();
-        setUserData({
-          uid: existingData.uid,
-          email: existingData.email,
-          displayName: existingData.displayName,
-          photoURL: existingData.photoURL,
-          credits: existingData.credits ?? 3,
-          provider: existingData.provider,
         });
       }
     } catch (error) {
@@ -111,23 +99,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 컴포넌트 마운트 시 Firebase의 로그인 상태 변화 리스너 등록
+  // 컴포넌트 마운트 시 Firebase의 로그인 상태 리스너 및 Firestore 실시간 크레딧 리스너 등록
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    let unsubscribeFirestore: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
 
       if (currentUser) {
-        // 로그인 성공 시 Firestore users 컬렉션 동기화 실행
+        // 1. 초기 사용자 확인 및 등록
         await syncUserToFirestore(currentUser);
+
+        // 2. ⚡ Firestore users/{uid} 실시간 구독 (onSnapshot)
+        // 결제 충전이나 크레딧 차감 시 새로고침 없이 화면의 크레딧 숫자가 즉각 바뀝니다!
+        const userDocRef = doc(db, "users", currentUser.uid);
+        unsubscribeFirestore = onSnapshot(
+          userDocRef,
+          (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              setUserData({
+                uid: data.uid,
+                email: data.email,
+                displayName: data.displayName,
+                photoURL: data.photoURL,
+                credits: typeof data.credits === "number" ? data.credits : 0,
+                provider: data.provider,
+                createdAt: data.createdAt,
+                lastLoginAt: data.lastLoginAt,
+                lastPaymentAt: data.lastPaymentAt,
+              });
+            }
+          },
+          (err) => {
+            console.error("사용자 크레딧 실시간 구독 오류:", err);
+          }
+        );
       } else {
         setUserData(null);
+        if (unsubscribeFirestore) {
+          unsubscribeFirestore();
+          unsubscribeFirestore = null;
+        }
       }
 
       setLoading(false);
     });
 
     // 컴포넌트 언마운트 시 리스너 해제 (메모리 누수 방지)
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
   }, []);
 
   // 1. 이메일/비밀번호 로그인 함수
@@ -158,9 +183,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUserData(null);
   };
 
+  // 5. 🪙 영상 제작 시 1 크레딧 원자적 차감 함수
+  const deductCredit = async (amount: number = 1): Promise<boolean> => {
+    if (!user) {
+      console.warn("로그인하지 않은 사용자는 크레딧을 차감할 수 없습니다.");
+      return false;
+    }
+
+    if (!userData || userData.credits < amount) {
+      console.warn("잔여 크레딧이 부족합니다.");
+      return false;
+    }
+
+    try {
+      const userDocRef = doc(db, "users", user.uid);
+      await updateDoc(userDocRef, {
+        credits: increment(-amount),
+      });
+      return true;
+    } catch (err) {
+      console.error("크레딧 차감 실패:", err);
+      return false;
+    }
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, userData, loading, login, signup, loginWithGoogle, logout }}
+      value={{
+        user,
+        userData,
+        loading,
+        login,
+        signup,
+        loginWithGoogle,
+        logout,
+        deductCredit,
+      }}
     >
       {children}
     </AuthContext.Provider>
@@ -169,8 +227,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 /**
  * 💡 useAuth 커스텀 훅
- * 모든 컴포넌트에서 간편하게 user, userData(크레딧 등) 정보 및 로그인/로그아웃 함수를 불러올 수 있습니다.
- * 예: const { user, userData, login, loginWithGoogle, logout } = useAuth();
+ * 모든 컴포넌트에서 간편하게 user, userData(크레딧 등) 정보 및 로그인/로그아웃/크레딧 차감 함수를 불러올 수 있습니다.
+ * 예: const { user, userData, deductCredit } = useAuth();
  */
 export function useAuth() {
   const context = useContext(AuthContext);
