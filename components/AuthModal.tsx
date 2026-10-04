@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 interface AuthModalProps {
@@ -9,6 +10,8 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+  const router = useRouter();
+
   // 모드: "login" (로그인) 또는 "signup" (회원가입)
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
@@ -56,8 +59,9 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     setGoogleSubmitting(true);
     try {
       await loginWithGoogle();
-      // 로그인 성공 시 모달 닫기
+      // 로그인 성공 시 모달 닫고 /generate 페이지로 자동 이동
       onClose();
+      router.push("/generate");
     } catch (err: unknown) {
       const firebaseError = err as { code?: string; message?: string };
       // 사용자가 팝업을 직접 닫은 경우 에러 메시지를 띄우지 않고 자연스럽게 종료
@@ -99,11 +103,12 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
       } else {
         await signup(email, password);
       }
-      // 성공 시 모달 닫기 및 폼 초기화
+      // 성공 시 모달 닫기 및 폼 초기화 후 /generate 페이지로 자동 이동
       onClose();
       setEmail("");
       setPassword("");
       setPasswordConfirm("");
+      router.push("/generate");
     } catch (err: unknown) {
       const firebaseError = err as { code?: string; message?: string };
       setErrorMsg(getKoreanErrorMessage(firebaseError.code || ""));

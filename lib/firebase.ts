@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 /**
  * 🔒 Firebase 웹 설정 (Environment Variables)
@@ -30,8 +31,14 @@ export const auth = getAuth(app);
 
 /**
  * 💾 Firestore Database 인스턴스
- * users 컬렉션 및 영상 메타데이터 저장 시 사용됩니다.
+ * users 컬렉션 및 generations 테이블 레코드 저장 시 사용됩니다.
  */
 export const db = getFirestore(app);
+
+/**
+ * 📦 Firebase Storage 인스턴스
+ * 생성된 이미지 파일 및 첨부된 사진 파일의 영구 저장소입니다.
+ */
+export const storage = getStorage(app);
 
 export default app;

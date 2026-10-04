@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
 
@@ -83,6 +85,7 @@ const FAQ_ITEMS = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   // Firebase 인증 및 Firestore 사용자 데이터 훅 사용
   const { user, userData, logout } = useAuth();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -186,20 +189,22 @@ export default function Home() {
                 로그인
               </button>
             )}
-            <button
-              onClick={() => {
-                if (!user) {
-                  setIsAuthModalOpen(true);
-                } else {
-                  const el = document.getElementById("prompt-input");
-                  el?.focus();
-                  el?.scrollIntoView({ behavior: "smooth" });
-                }
-              }}
-              className="text-xs sm:text-sm font-medium bg-white text-black hover:bg-[#e4e4e7] px-4 py-2 rounded-full transition-all active:scale-95 shadow-sm cursor-pointer"
-            >
-              {user ? "새 영상 만들기" : "무료 시작하기"}
-            </button>
+            {user ? (
+              <Link
+                href="/generate"
+                className="text-xs sm:text-sm font-medium bg-white text-black hover:bg-[#e4e4e7] px-4 py-2 rounded-full transition-all active:scale-95 shadow-sm cursor-pointer flex items-center gap-1.5"
+              >
+                <span>새 영상 만들기</span>
+                <span className="text-xs">🎬</span>
+              </Link>
+            ) : (
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="text-xs sm:text-sm font-medium bg-white text-black hover:bg-[#e4e4e7] px-4 py-2 rounded-full transition-all active:scale-95 shadow-sm cursor-pointer"
+              >
+                무료 시작하기
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -734,15 +739,18 @@ export default function Home() {
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowDoneModal(false)}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-white text-black font-medium text-xs hover:bg-[#e4e4e7] transition-all"
+                onClick={() => {
+                  setShowDoneModal(false);
+                  router.push("/generate");
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-white text-black font-medium text-xs hover:bg-[#e4e4e7] transition-all cursor-pointer"
               >
-                다운로드 및 편집기 열기
+                영상 다운로드 및 편집기 열기 →
               </button>
               <button
                 type="button"
                 onClick={() => setShowDoneModal(false)}
-                className="px-4 py-2.5 rounded-xl bg-[#18181b] border border-[#27272a] text-[#a1a1aa] hover:text-white text-xs transition-colors"
+                className="px-4 py-2.5 rounded-xl bg-[#18181b] border border-[#27272a] text-[#a1a1aa] hover:text-white text-xs transition-colors cursor-pointer"
               >
                 닫기
               </button>
